@@ -115,6 +115,10 @@ def test_delete_payload_with_nested_key(prefer_grpc):
     # field inside every element of a nested array
     delete_keys({"loc": [{"x": 1, "y": 2}, {"x": 3, "y": 4}]}, ["loc[].x"])
 
+    # a terminal array index is a no-op on the server (deleting a single
+    # element by index is not idempotent), so both sides leave it untouched
+    delete_keys({"loc": [{"x": 1}, {"x": 2}]}, ["loc[0]"])
+
     # top-level and nested keys together
     delete_keys({"a": {"b": 1}, "top": 9}, ["a.b", "top"])
 

@@ -18,14 +18,24 @@ def _delete(payload: dict, key: str) -> dict:
         ({"a": {"b": 1, "c": 2}, "top": 9}, "a.b", {"a": {"c": 2}, "top": 9}),
         # deeper path
         ({"a": {"b": {"c": 1, "d": 2}}}, "a.b.c", {"a": {"b": {"d": 2}}}),
-        # array index
+        # array index in a nested path traverses that element
         ({"loc": [{"x": 1}, {"x": 2}]}, "loc[0].x", {"loc": [{}, {"x": 2}]}),
+        # a terminal array index is a no-op: the server does not delete a
+        # single element by index (it is not idempotent)
+        ({"loc": [{"x": 1}, {"x": 2}]}, "loc[0]", {"loc": [{"x": 1}, {"x": 2}]}),
+        ({"loc": [1, 2, 3]}, "loc[1]", {"loc": [1, 2, 3]}),
+        # negative indices are not representable server-side, so they must not
+        # delete or traverse (Python-style negative indexing must be ignored)
+        ({"loc": [1, 2, 3]}, "loc[-1]", {"loc": [1, 2, 3]}),
+        ({"loc": [{"x": 1}, {"x": 2}]}, "loc[-1].x", {"loc": [{"x": 1}, {"x": 2}]}),
         # array wildcard removes the field from every element
         (
             {"loc": [{"x": 1, "y": 2}, {"x": 3, "y": 4}]},
             "loc[].x",
             {"loc": [{"y": 2}, {"y": 4}]},
         ),
+        # a terminal wildcard clears the whole array
+        ({"loc": [1, 2, 3], "top": 9}, "loc[]", {"loc": [], "top": 9}),
         # non-existent path is a no-op, nothing else touched
         ({"a": {"c": 2}}, "a.b", {"a": {"c": 2}}),
         ({"a": {"c": 2}}, "nope.nested", {"a": {"c": 2}}),

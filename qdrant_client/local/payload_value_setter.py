@@ -31,12 +31,16 @@ def set_value_by_key(payload: dict, keys: list[JsonPathItem], value: Any) -> Non
 def delete_value_by_key(payload: dict, keys: list[JsonPathItem]) -> None:
     """
     Delete value in payload by key path, matching the server's payload-delete
-    semantics (nested keys via dot notation, array indices and wildcards).
+    semantics (nested keys via dot notation, array traversal by index and
+    wildcards).
 
     A key path that does not resolve to an existing value is a no-op, and
-    sibling values are preserved. This mirrors the json-path handling that
-    ``set_value_by_key`` and ``value_by_key`` already use, so ``delete_payload``
-    honors the same paths as ``set_payload`` and filters.
+    sibling values are preserved. As on the server, a path ending in an array
+    index is a no-op (deleting a single element by index is not idempotent);
+    only a trailing wildcard (``arr[]``) clears an array. This mirrors the
+    json-path handling that ``set_value_by_key`` and ``value_by_key`` already
+    use, so ``delete_payload`` honors the same paths as ``set_payload`` and
+    filters.
 
     Args:
         payload: arbitrary json-like object
@@ -53,13 +57,14 @@ def delete_value_by_key(payload: dict, keys: list[JsonPathItem]) -> None:
         if len(k_list) == 0:
             if isinstance(data, dict) and current_key.item_type == JsonPathItemType.KEY:
                 data.pop(current_key.key, None)
-            elif isinstance(data, list):
-                if current_key.item_type == JsonPathItemType.INDEX:
-                    assert current_key.index is not None
-                    if current_key.index < len(data):
-                        del data[current_key.index]
-                elif current_key.item_type == JsonPathItemType.WILDCARD_INDEX:
-                    data.clear()
+            elif (
+                isinstance(data, list) and current_key.item_type == JsonPathItemType.WILDCARD_INDEX
+            ):
+                # A wildcard clears the whole array. A terminal array index is
+                # intentionally not handled: the server does not delete a single
+                # element by index (it is not idempotent), so it is a no-op here
+                # to keep local and server behavior identical.
+                data.clear()
             return
 
         if current_key.item_type == JsonPathItemType.KEY:
@@ -67,7 +72,10 @@ def delete_value_by_key(payload: dict, keys: list[JsonPathItem]) -> None:
                 _delete(data[current_key.key], k_list.copy())
         elif current_key.item_type == JsonPathItemType.INDEX:
             assert current_key.index is not None
-            if isinstance(data, list) and current_key.index < len(data):
+            # The server addresses array elements with an unsigned index, so
+            # only a non-negative, in-range index traverses; a negative or
+            # out-of-range index is a no-op.
+            if isinstance(data, list) and 0 <= current_key.index < len(data):
                 _delete(data[current_key.index], k_list.copy())
         elif current_key.item_type == JsonPathItemType.WILDCARD_INDEX:
             if isinstance(data, list):
