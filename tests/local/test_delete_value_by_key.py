@@ -24,10 +24,8 @@ def _delete(payload: dict, key: str) -> dict:
         # single element by index (it is not idempotent)
         ({"loc": [{"x": 1}, {"x": 2}]}, "loc[0]", {"loc": [{"x": 1}, {"x": 2}]}),
         ({"loc": [1, 2, 3]}, "loc[1]", {"loc": [1, 2, 3]}),
-        # negative indices are not representable server-side, so they must not
-        # delete or traverse (Python-style negative indexing must be ignored)
-        ({"loc": [1, 2, 3]}, "loc[-1]", {"loc": [1, 2, 3]}),
-        ({"loc": [{"x": 1}, {"x": 2}]}, "loc[-1].x", {"loc": [{"x": 1}, {"x": 2}]}),
+        # an out-of-range index does not traverse
+        ({"loc": [{"x": 1}]}, "loc[5].x", {"loc": [{"x": 1}]}),
         # array wildcard removes the field from every element
         (
             {"loc": [{"x": 1, "y": 2}, {"x": 3, "y": 4}]},
@@ -45,3 +43,11 @@ def _delete(payload: dict, key: str) -> dict:
 )
 def test_delete_value_by_key(payload, key, expected):
     assert _delete(payload, key) == expected
+
+
+@pytest.mark.parametrize("key", ["loc[-1]", "loc[-1].x"])
+def test_negative_index_is_rejected(key):
+    # not a valid json path server-side, parse_json_path rejects it before
+    # delete_value_by_key is reached
+    with pytest.raises(ValueError):
+        parse_json_path(key)

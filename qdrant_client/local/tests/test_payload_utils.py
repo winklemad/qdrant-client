@@ -183,6 +183,25 @@ def test_parse_json_path() -> None:
         jp_key = "a.c[].[]"
         parse_json_path(jp_key)
 
+    # the server accepts only unsigned decimal digits that fit into u64
+    for jp_key in (
+        "a[-1]",
+        "a[-1].b",
+        "a[+1]",
+        "a[1_0]",
+        "a[ 1 ]",
+        "a[\u0661]",
+        f"a[{2**64}]",
+    ):
+        with pytest.raises(ValueError):
+            parse_json_path(jp_key)
+
+    assert parse_json_path("a[01]") == [
+        JsonPathItem(item_type=JsonPathItemType.KEY, key="a"),
+        JsonPathItem(item_type=JsonPathItemType.INDEX, index=1),
+    ]
+    assert parse_json_path(f"a[{2**64 - 1}]")[1].index == 2**64 - 1
+
 
 def test_value_by_key() -> None:
     payload = {
@@ -460,41 +479,32 @@ def test_set_value_by_key() -> None:
 
     # region exceptions
 
-    try:
+    # incorrect quotes
+    with pytest.raises(ValueError):
         payload = {"a": []}
         new_value = {"c": 3}
         key = "a.'b.c'"
         set_value_by_key(payload, parse_json_path(key), new_value)
-        assert False, f"Should've raised an exception due to the key with incorrect quotes: {key}"
-    except Exception:
-        assert True
 
-    try:
+    # negative indexation is not supported
+    with pytest.raises(ValueError):
         payload = {"a": [{"b": 1}, {"b": 2}]}
         new_value = {"c": 3}
         key = "a[-1]"
         set_value_by_key(payload, parse_json_path(key), new_value)
-        assert False, "Negative indexation is not supported"
-    except Exception:
-        assert True
 
-    try:
+    # unbalanced brackets
+    with pytest.raises(ValueError):
         payload = {"a": [{"b": 1}, {"b": 2}]}
         new_value = {"c": 3}
         key = "a["
         set_value_by_key(payload, parse_json_path(key), new_value)
-        assert False, f"Should've raised an exception due to the incorrect key: {key}"
-    except Exception:
-        assert True
 
-    try:
+    with pytest.raises(ValueError):
         payload = {"a": [{"b": 1}, {"b": 2}]}
         new_value = {"c": 3}
         key = "a]"
         set_value_by_key(payload, parse_json_path(key), new_value)
-        assert False, f"Should've raise an exception due to the incorrect key: {key}"
-    except Exception:
-        assert True
 
     # endregion
 

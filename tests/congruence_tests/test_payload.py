@@ -119,8 +119,43 @@ def test_delete_payload_with_nested_key(prefer_grpc):
     # element by index is not idempotent), so both sides leave it untouched
     delete_keys({"loc": [{"x": 1}, {"x": 2}]}, ["loc[0]"])
 
+    # a terminal wildcard clears the array instead
+    delete_keys({"loc": [1, 2, 3], "top": 9}, ["loc[]"])
+
+    # arrays are not implicitly flattened: "loc.x" does not reach into elements,
+    # unlike in filters, where "loc.x" and "loc[].x" are equivalent
+    delete_keys({"loc": [{"x": 1, "y": 2}]}, ["loc.x"])
+
+    # a dotted path never matches a literal key containing a dot
+    delete_keys({"a.b": 1, "a": {"b": 2}}, ["a.b"])
+
+    # nested wildcards clear each inner array
+    delete_keys({"loc": [[1, 2], [3, 4]]}, ["loc[][]"])
+
     # top-level and nested keys together
     delete_keys({"a": {"b": 1}, "top": 9}, ["a.b", "top"])
+
+    # an invalid json path rejects the whole request on both sides: nothing is
+    # deleted, not even for the keys preceding the invalid one. "loc[-1]" is
+    # invalid too: the server addresses array elements with an unsigned index.
+    for invalid_key in ("not a valid path", "loc[-1]", "loc[-1].x"):
+        for client in (local_client, remote_client):
+            client.upsert(
+                collection_name=COLLECTION_NAME,
+                points=[
+                    PointStruct(id=9999, payload={"a": {"b": 1}, "loc": [1, 2]}, vector=vector),
+                    PointStruct(id=10000, payload={"a": {"b": 1}, "loc": [1, 2]}, vector=vector),
+                ],
+                wait=True,
+            )
+            with pytest.raises((ValueError, UnexpectedResponse, grpc.RpcError)):
+                client.delete_payload(
+                    collection_name=COLLECTION_NAME,
+                    keys=["a.b", invalid_key],
+                    points=[9999, 10000],
+                    wait=True,
+                )
+        compare_collections(local_client, remote_client, 2)
 
 
 @pytest.mark.parametrize("prefer_grpc", [True, False])

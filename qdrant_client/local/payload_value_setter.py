@@ -72,10 +72,7 @@ def delete_value_by_key(payload: dict, keys: list[JsonPathItem]) -> None:
                 _delete(data[current_key.key], k_list.copy())
         elif current_key.item_type == JsonPathItemType.INDEX:
             assert current_key.index is not None
-            # The server addresses array elements with an unsigned index, so
-            # only a non-negative, in-range index traverses; a negative or
-            # out-of-range index is a no-op.
-            if isinstance(data, list) and 0 <= current_key.index < len(data):
+            if isinstance(data, list) and current_key.index < len(data):
                 _delete(data[current_key.index], k_list.copy())
         elif current_key.item_type == JsonPathItemType.WILDCARD_INDEX:
             if isinstance(data, list):

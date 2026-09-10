@@ -2933,11 +2933,12 @@ class LocalCollection:
             | models.PointIdsList
         ),
     ) -> None:
+        parsed_keys = [parse_json_path(key) for key in keys]
         ids = self._selector_to_ids(selector)
         for point_id in ids:
             idx = self.ids[point_id]
-            for key in keys:
-                delete_value_by_key(self.payload[idx], parse_json_path(key))
+            for parsed_key in parsed_keys:
+                delete_value_by_key(self.payload[idx], parsed_key)
             self._persist_by_id(point_id)
 
     def clear_payload(
