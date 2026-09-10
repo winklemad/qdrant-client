@@ -8,7 +8,7 @@ from qdrant_client.local.json_path_parser import (
     parse_json_path,
 )
 from qdrant_client.local.payload_value_extractor import value_by_key
-from qdrant_client.local.payload_value_setter import set_value_by_key
+from qdrant_client.local.payload_value_setter import delete_value_by_key, set_value_by_key
 
 
 def test_parse_json_path() -> None:
@@ -556,4 +556,43 @@ def test_set_value_by_key() -> None:
     key = "a.c[][]"
     set_value_by_key(payload, parse_json_path(key), new_value)
     assert payload == {"a": {"c": [[]]}}, payload
+    # endregion
+
+
+def test_delete_value_by_key() -> None:
+    def delete(payload: dict, key: str) -> dict:
+        delete_value_by_key(payload, parse_json_path(key))
+        return payload
+
+    # region top-level
+    assert delete({"a": 1, "b": 2}, "a") == {"b": 2}
+    assert delete({"a": {"c": 2}}, "nope") == {"a": {"c": 2}}
+    # endregion
+
+    # region nested keys, siblings preserved
+    assert delete({"a": {"b": 1, "c": 2}, "top": 9}, "a.b") == {"a": {"c": 2}, "top": 9}
+    assert delete({"a": {"b": {"c": 1, "d": 2}}}, "a.b.c") == {"a": {"b": {"d": 2}}}
+    assert delete({"the": {"nested.key": 1, "b": 2}}, 'the."nested.key"') == {"the": {"b": 2}}
+    # endregion
+
+    # region arrays
+    assert delete({"loc": [{"x": 1}, {"x": 2}]}, "loc[0].x") == {"loc": [{}, {"x": 2}]}
+    assert delete({"loc": [{"x": 1, "y": 2}, {"x": 3}]}, "loc[].x") == {"loc": [{"y": 2}, {}]}
+    assert delete({"loc": [[1, 2], [3, 4]]}, "loc[][]") == {"loc": [[], []]}
+    # a terminal wildcard clears the array, a terminal index is a no-op
+    assert delete({"loc": [1, 2, 3], "top": 9}, "loc[]") == {"loc": [], "top": 9}
+    assert delete({"loc": [{"x": 1}, {"x": 2}]}, "loc[0]") == {"loc": [{"x": 1}, {"x": 2}]}
+    assert delete({"loc": [1, 2, 3]}, "loc[1]") == {"loc": [1, 2, 3]}
+    # arrays are not implicitly flattened, unlike in filters
+    assert delete({"loc": [{"x": 1}]}, "loc.x") == {"loc": [{"x": 1}]}
+    # endregion
+
+    # region paths that do not resolve
+    assert delete({"loc": [{"x": 1}]}, "loc[5].x") == {"loc": [{"x": 1}]}
+    assert delete({"a": {"c": 2}}, "a.b") == {"a": {"c": 2}}
+    assert delete({"a": {"c": 2}}, "nope.nested") == {"a": {"c": 2}}
+    assert delete({"a": 5}, "a.b") == {"a": 5}
+    assert delete({"loc": {"x": 1}}, "loc[]") == {"loc": {"x": 1}}
+    # a dotted path never matches a literal key containing a dot
+    assert delete({"a.b": 1, "a": {"b": 2}}, "a.b") == {"a.b": 1, "a": {}}
     # endregion
